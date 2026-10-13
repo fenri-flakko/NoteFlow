@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronUp, ChevronDown } from 'lucide-react';
 import type { DocItem, ToolType, PaperTemplate, PageAnnotation } from './types';
 import { loadPdfDoc, exportPdfWithAnnotations, downloadBlob } from './utils/pdfHelper';
 import { renderPaperBackground } from './utils/paperBackground';
@@ -110,6 +110,46 @@ export const App: React.FC = () => {
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [currentDoc]);
+
+  // 5. Native touch drag scrolling for tablets / iPad
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !currentDoc) return;
+
+    let startY = 0;
+    let startScrollTop = 0;
+    let isTouching = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (fingerScrollOnly && e.touches.length === 1) {
+        isTouching = true;
+        startY = e.touches[0].clientY;
+        startScrollTop = container.scrollTop;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isTouching || e.touches.length !== 1) return;
+      const deltaY = startY - e.touches[0].clientY;
+      container.scrollTop = startScrollTop + deltaY;
+    };
+
+    const onTouchEnd = () => {
+      isTouching = false;
+    };
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: true });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [currentDoc, fingerScrollOnly]);
 
   // Handle open document
   const handleOpenDocument = (doc: DocItem) => {
@@ -477,7 +517,7 @@ export const App: React.FC = () => {
 
   // Otherwise, render Free Notes PDF / Notebook Editor
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-200/90 overflow-hidden">
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-200/90 overflow-hidden relative">
       {/* Top Floating Toolbar */}
       <Toolbar
         tool={tool}
@@ -519,10 +559,10 @@ export const App: React.FC = () => {
         paperTemplate={currentDoc.paperTemplate}
       />
 
-      {/* Editor Main Canvas Scroll Area (Continuous Vertical Multi-page Scroll) */}
+      {/* Editor Main Canvas Scroll Area (Continuous Vertical Multi-page Scroll with min-h-0) */}
       <main
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-auto relative p-4 flex flex-col items-center gap-4 scroll-smooth"
+        className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-auto relative p-4 md:p-6 flex flex-col items-center gap-6 scroll-container"
       >
         {Array.from({ length: currentDoc.pageCount }, (_, idx) => {
           const ann: PageAnnotation = currentDoc.pagesAnnotations[idx] || {
@@ -565,6 +605,29 @@ export const App: React.FC = () => {
           </button>
         )}
       </main>
+
+      {/* Floating Page Navigation Pill (Bottom Right) */}
+      <div className="fixed bottom-5 right-5 z-40 bg-white/95 backdrop-blur-md rounded-full shadow-xl border border-slate-200/90 px-2 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+        <button
+          onClick={() => scrollToPage(currentPage - 1)}
+          disabled={currentPage <= 0}
+          className="p-1.5 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition"
+          title="Página anterior"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+        <span className="px-2 font-mono text-[11px] text-slate-600">
+          {currentPage + 1} / {currentDoc.pageCount}
+        </span>
+        <button
+          onClick={() => scrollToPage(currentPage + 1)}
+          disabled={currentPage >= currentDoc.pageCount - 1}
+          className="p-1.5 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition"
+          title="Página siguiente"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      </div>
 
       {/* Exporting Indicator Modal */}
       {isExporting && (
